@@ -45,7 +45,7 @@ const CryptoTradingCalculator = () => {
   const [userHasEditedSellPrice, setUserHasEditedSellPrice] = useState(false);
   const [queuedTrades, setQueuedTrades] = useState<QueuedTrade[]>([]);
   const [sortBy, setSortBy] = useState('profit');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [sortSettingsLoaded, setSortSettingsLoaded] = useState(false);
 
   const tokens = [
@@ -248,6 +248,14 @@ const CryptoTradingCalculator = () => {
   const loadInputsForToken = (token: any) => {
     if (!token || !token.id) return;
     
+    // Always clear inputs first when switching tokens
+    setBuyPrice('');
+    setSellPrice('');
+    setTargetProfit('');
+    setUserHasEditedBuyPrice(false);
+    setUserHasEditedSellPrice(false);
+    
+    // Then load saved inputs if they exist
     const tokenInputs = savedInputs[token.id];
     if (tokenInputs) {
       // Don't load investment amount - it's shared across tokens
@@ -293,19 +301,26 @@ const CryptoTradingCalculator = () => {
       (window as any)['cryptoCalculatorLastToken'] = JSON.stringify(token);
     }
     
-    // Reset edit flags when switching tokens
-    setUserHasEditedBuyPrice(false);
-    setUserHasEditedSellPrice(false);
-    
     loadInputsForToken(token);
     
-    // Set buy price to current token price and fill sell price if empty
+    // Set buy price to current token price only if user hasn't edited it manually
+    // OR if clicking the same token (refreshing current token price)
     const price = tokenPrices[token.id]?.usd;
     if (price) {
-      setBuyPrice(price.toFixed(4));
+      const isSameToken = selectedToken?.id === token.id;
+      const tokenInputs = savedInputs[token.id];
+      const hasUserEditedBuyPrice = tokenInputs?.userHasEditedBuyPrice || false;
+      const hasUserEditedSellPrice = tokenInputs?.userHasEditedSellPrice || false;
       
-      // Only set sell price if it's currently empty
-      if (!sellPrice) {
+      // Only set buy price if:
+      // 1. Clicking the same token (to refresh current price), OR
+      // 2. User has not manually edited the buy price for this token
+      if (isSameToken || !hasUserEditedBuyPrice) {
+        setBuyPrice(price.toFixed(4));
+      }
+      
+      // Set sell price to default only if user hasn't edited it for this token
+      if (!hasUserEditedSellPrice) {
         const sellPriceValue = price * 1.05; // 5% gain
         setSellPrice(sellPriceValue.toFixed(4));
       }
@@ -426,6 +441,9 @@ const CryptoTradingCalculator = () => {
         sellFee: sellFee,
         totalFees: buyFee + sellFee
       });
+    } else {
+      // Clear results if conditions aren't met
+      setResults(null);
     }
   };
 
@@ -746,7 +764,7 @@ const CryptoTradingCalculator = () => {
     <div className="dark min-h-screen bg-background p-4">
       <div className="container max-w-5xl mx-auto">
         <div className="text-center mb-8 pt-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-4">
             <Calculator className="w-8 h-8 text-primary" />
             <h1 className="text-3xl font-bold text-foreground">Lex Crypto Trading Calculator</h1>
           </div>
@@ -993,7 +1011,7 @@ const CryptoTradingCalculator = () => {
                         <span className="text-sm text-muted-foreground">Price Spread</span>
                       </div>
                       <div className={`text-lg font-semibold ${results.priceDifference >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {results.priceDifference >= 0 ? '+' : ''}{formatCurrency(results.priceDifference, true)}
+                        {results.priceDifference >= 0 ? '+' : ''}${results.priceDifference.toFixed(4)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
                         Sell - Buy price
@@ -1007,7 +1025,7 @@ const CryptoTradingCalculator = () => {
                     <CardContent className="p-4">
                       <div className="text-sm text-muted-foreground mb-1">Required Sell Price</div>
                       <div className="text-2xl font-bold">
-                        {formatCurrency(results.requiredSellPrice)}
+                        ${results.requiredSellPrice.toFixed(4)}
                       </div>
                     </CardContent>
                   </Card>
@@ -1080,41 +1098,42 @@ const CryptoTradingCalculator = () => {
         {/* Compare Trades Section */}
         <Card className="mt-8 border-0">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="w-5 h-5" />
                 Compare Trades
               </CardTitle>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                 {queuedTrades.length > 0 && (
-                  <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Sort by..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="profit">Profit</SelectItem>
-                      <SelectItem value="percentage">Profit %</SelectItem>
-                      <SelectItem value="investment">Investment</SelectItem>
-                      <SelectItem value="token">Token</SelectItem>
-                      <SelectItem value="date">Date</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-                {queuedTrades.length > 0 && (
-                  <Button
-                    onClick={toggleSortDirection}
-                    variant="outline"
-                    size="sm"
-                    title={`Sort ${sortDirection === 'desc' ? 'Descending' : 'Ascending'}`}
-                  >
-                    {sortDirection === 'desc' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
-                  </Button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue placeholder="Sort by..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="profit">Profit</SelectItem>
+                        <SelectItem value="percentage">Profit %</SelectItem>
+                        <SelectItem value="investment">Investment</SelectItem>
+                        <SelectItem value="token">Token</SelectItem>
+                        <SelectItem value="date">Date</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={toggleSortDirection}
+                      variant="outline"
+                      size="sm"
+                      title={`Sort ${sortDirection === 'desc' ? 'Descending' : 'Ascending'}`}
+                    >
+                      {sortDirection === 'desc' ? <ArrowDown className="w-4 h-4" /> : <ArrowUp className="w-4 h-4" />}
+                    </Button>
+                  </div>
                 )}
                 {queuedTrades.length > 0 && (
                   <Button
                     onClick={clearAllTrades}
                     variant="outline"
                     size="sm"
+                    className="w-full sm:w-auto"
                   >
                     <Trash2 className="w-4 h-4 mr-2" />
                     Clear All
@@ -1133,7 +1152,70 @@ const CryptoTradingCalculator = () => {
                   {sortedTrades.map((trade) => (
                     <Card key={trade.id} className="border border-input">
                       <CardContent className="p-4">
-                        <div className="grid grid-cols-12 gap-4 items-center">
+                        {/* Mobile Layout - Stack vertically on small screens */}
+                        <div className="block md:hidden">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                                <img
+                                  src={getTokenIcon(trade.token.symbol)}
+                                  alt={trade.token.symbol}
+                                  className="w-6 h-6"
+                                  onError={(e) => {
+                                    (e.target as any).style.display = 'none';
+                                    (e.target as any).nextSibling.style.display = 'block';
+                                  }}
+                                />
+                                <span className="text-xs font-bold hidden text-black">
+                                  {trade.token.symbol.charAt(0)}
+                                </span>
+                              </div>
+                              <div>
+                                <div className="font-medium">{trade.token.symbol}</div>
+                                <div className="text-xs text-muted-foreground">{trade.token.name}</div>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={() => removeTradeFromComparison(trade.id)}
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground hover:text-foreground"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4 mb-2">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Investment</div>
+                              <div className="font-medium">{formatCurrency(trade.parameters.investmentAmount)}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Net Profit</div>
+                              <div className={`font-semibold ${trade.results.netProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {formatCurrency(trade.results.netProfit)}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <div className="text-xs text-muted-foreground">Buy → Sell</div>
+                              <div className="font-medium text-sm">
+                                ${trade.parameters.buyPrice.toFixed(4)} → ${trade.parameters.sellPrice.toFixed(4)}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Profit %</div>
+                              <div className={`font-semibold ${trade.results.profitPercentage >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {trade.results.profitPercentage.toFixed(2)}%
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Desktop Layout - Horizontal layout on medium screens and up */}
+                        <div className="hidden md:grid md:grid-cols-12 gap-4 items-center">
                           {/* Token Info - 2 columns */}
                           <div className="col-span-2 flex items-center gap-3">
                             <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center overflow-hidden">
